@@ -1,3 +1,9 @@
 overrides:
   onnxruntime-web: 1.22.0
   onnxruntime-common: 1.22.0
+
+# Browser-only inference: explicitly skip unused native dependency builds.
+allowBuilds:
+  onnxruntime-node: false
+  protobufjs: false
+  sharp: false

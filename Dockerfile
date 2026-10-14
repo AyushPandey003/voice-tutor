@@ -3,8 +3,8 @@ FROM node:22-alpine AS deps
 WORKDIR /app
 RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-# --ignore-scripts skips onnxruntime-node's large native download (unused in the browser)
-RUN pnpm install --frozen-lockfile --ignore-scripts
+# pnpm-workspace.yaml explicitly disables unused native dependency builds.
+RUN pnpm install --frozen-lockfile
 
 # ---- build ----
 FROM node:22-alpine AS builder
