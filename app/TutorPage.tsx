@@ -1,5 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { STT_MODELS, type SttModel } from "@/lib/voice-tutor/sttConfig";
+import { voiceGroup } from "@/lib/voice-tutor/browserVoices";
 import { useVoiceTutor } from "@/lib/voice-tutor/useVoiceTutor";
 import { KICKOFF, MAX_LESSON_CHARS, buildRevisionPrompt, extractOutline } from "@/lib/voice-tutor/revisionPrompt";
 
@@ -21,6 +23,19 @@ export default function TutorPage({ byokRequired }: { byokRequired: boolean }) {
   const [drag, setDrag] = useState(false);
   const [input, setInput] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [sttModel, setSttModel] = useState<SttModel>("whisper-tiny.en");
+  const [sttLanguage, setSttLanguage] = useState("auto");
+  const [voice, setVoice] = useState("");
+  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
+
+  useEffect(() => {
+    const synth = window.speechSynthesis;
+    if (!synth) return;
+    const update = () => setVoices(synth.getVoices().sort((a, b) => a.lang.localeCompare(b.lang) || a.name.localeCompare(b.name)));
+    update();
+    synth.addEventListener("voiceschanged", update);
+    return () => synth.removeEventListener("voiceschanged", update);
+  }, []);
   const kick = useRef(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const logRef = useRef<HTMLDivElement>(null);
@@ -31,6 +46,9 @@ export default function TutorPage({ byokRequired }: { byokRequired: boolean }) {
   );
   const { status, busy, messages, progress, loadingDetail, error, start, stop, send, reset } = useVoiceTutor({
     systemPrompt,
+    sttModel,
+    sttLanguage,
+    voice,
     maxTokens: 450,
     byok: byokRequired,
     apiKey,
@@ -110,11 +128,45 @@ export default function TutorPage({ byokRequired }: { byokRequired: boolean }) {
     </section>
   ) : null;
 
+  const voiceSettings = (
+    <section className="card" style={{ marginBottom: 16, padding: 16 }} aria-label="Speech settings">
+      <div className="row" style={{ flexWrap: "wrap", gap: 12 }}>
+        <label>Speech recognition<br />
+          <select value={sttModel} disabled={voiceOn} onChange={(e) => setSttModel(e.target.value as SttModel)}>
+            {Object.entries(STT_MODELS).map(([key, model]) => <option key={key} value={key}>{model.label}</option>)}
+          </select>
+        </label>
+        {STT_MODELS[sttModel].kind === "whisper" && <label>Recognition language<br />
+          <select value={sttLanguage} disabled={voiceOn} onChange={(e) => setSttLanguage(e.target.value)}>
+            <option value="auto">Auto-detect</option>
+            <option value="english">English</option><option value="hindi">Hindi</option>
+            <option value="spanish">Spanish</option><option value="french">French</option>
+            <option value="german">German</option><option value="japanese">Japanese</option>
+          </select>
+        </label>}
+        <label>AI speaking voice<br />
+          <select value={voice} onChange={(e) => setVoice(e.target.value)}>
+            <option value="">Automatic (English)</option>
+            {(["Female", "Male", "Other / unspecified"] as const).map((group) => (
+              <optgroup key={group} label={group}>
+                {voices.filter((v) => voiceGroup(v.name) === group).map((v) => (
+                  <option key={v.voiceURI} value={v.voiceURI}>{v.name} — {v.lang}</option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+        </label>
+      </div>
+      <p className="sub">{STT_MODELS[sttModel].id}. {voiceOn ? "Turn Voice off to change recognition models." : "Each model downloads once, then is cached by your browser."} Speaking voices depend on your browser/OS; gender groups are inferred from known names. Voice changes apply to the next sentence.</p>
+    </section>
+  );
+
   if (!lesson) {
     return (
       <main>
         <h1>📚 Revision Agent</h1>
         {keySettings}
+        {voiceSettings}
         <p className="sub">Upload a lesson in Markdown and revise it with a coach that quizzes you, explains, and finds your weak spots.</p>
         <div className={`drop card ${drag ? "over" : ""}`} {...dropProps} onClick={() => fileRef.current?.click()}>
           <div className="big">⬆️</div>
@@ -132,6 +184,7 @@ export default function TutorPage({ byokRequired }: { byokRequired: boolean }) {
   return (
     <main className="wide">
       {keySettings}
+      {voiceSettings}
       <div className="layout" {...dropProps}>
         <aside className="card side">
           <div className="side-head">

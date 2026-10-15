@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { STT_MODELS, type SttModel } from "./sttConfig";
 
 export type Status = "idle" | "loading" | "listening" | "recording" | "transcribing" | "thinking" | "speaking";
 export type Msg = { role: "user" | "assistant"; content: string };
@@ -8,13 +9,15 @@ type Opts = {
   endpoint?: string;     // Next.js route that streams plain text
   systemPrompt?: string; // read fresh on every request
   voice?: string;
+  sttModel?: SttModel;
+  sttLanguage?: string;
   maxTokens?: number;
   byok?: boolean;
   apiKey?: string;
 };
 
 /** Text chat with hands-free voice and confidence-gated interruption. */
-export function useVoiceTutor({ endpoint = "/api/tutor", systemPrompt, voice, maxTokens, byok = false, apiKey = "" }: Opts = {}) {
+export function useVoiceTutor({ endpoint = "/api/tutor", systemPrompt, voice, sttModel = "whisper-tiny.en", sttLanguage = "auto", maxTokens, byok = false, apiKey = "" }: Opts = {}) {
   const [status, setStatus] = useState<Status>("idle"); // voice state
   const [busy, setBusy] = useState(false);              // LLM reply in flight
   const [messages, setMessages] = useState<Msg[]>([]);
@@ -41,6 +44,8 @@ export function useVoiceTutor({ endpoint = "/api/tutor", systemPrompt, voice, ma
   const speakQueue = useRef<Promise<void>>(Promise.resolve());
   const promptRef = useRef(systemPrompt);
   promptRef.current = systemPrompt;
+  const voiceRef = useRef(voice);
+  voiceRef.current = voice;
   const credentials = useRef({ byok, apiKey });
   credentials.current = { byok, apiKey };
 
@@ -83,7 +88,7 @@ export function useVoiceTutor({ endpoint = "/api/tutor", systemPrompt, voice, ma
         const utterance = new SpeechSynthesisUtterance(sentence.replace(/[*#`]/g, ""));
         utterance.lang = "en-US";
         const voices = window.speechSynthesis.getVoices();
-        const selected = voices.find((v) => voice ? v.name === voice : v.lang.startsWith("en") && /Natural|Online|Google/.test(v.name))
+        const selected = voices.find((v) => voiceRef.current ? v.voiceURI === voiceRef.current : v.lang.startsWith("en") && /Natural|Online|Google/.test(v.name))
           ?? voices.find((v) => v.lang.startsWith("en"));
         if (selected) utterance.voice = selected;
         const finish = () => { utterances.current.delete(utterance); resolve(); };
@@ -171,13 +176,13 @@ export function useVoiceTutor({ endpoint = "/api/tutor", systemPrompt, voice, ma
         if (voiceActive.current && !sources.current.length && !speechPending.current) set("listening");
       }
     }
-  }, [endpoint, voice, maxTokens]);
+  }, [endpoint, maxTokens]);
 
   const start = useCallback(async () => {
     if (statusRef.current !== "idle") return;
     setError(null);
     setProgress(0);
-    setLoadingDetail("Downloading speech recognition (first use can take several minutes)…");
+    setLoadingDetail(`Loading ${STT_MODELS[sttModel].label} (first use downloads model files)…`);
     set("loading");
     const controller = new AbortController();
     startup.current = controller;
@@ -216,7 +221,7 @@ export function useVoiceTutor({ endpoint = "/api/tutor", systemPrompt, voice, ma
       w.addEventListener("message", h);
       w.addEventListener("error", failed);
       controller.signal.addEventListener("abort", cancelled, { once: true });
-      w.postMessage({ type: "init", device });
+      w.postMessage({ type: "init", device, model: sttModel, language: sttLanguage });
     });
     try {
       ctx.current = new AudioContext();
@@ -287,7 +292,7 @@ export function useVoiceTutor({ endpoint = "/api/tutor", systemPrompt, voice, ma
         teardownVoice();
       }
     }
-  }, [send]);
+  }, [send, sttModel, sttLanguage]);
 
   const teardownVoice = () => {
     startup.current?.abort(); startup.current = undefined;

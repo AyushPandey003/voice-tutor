@@ -53,6 +53,18 @@ pnpm dev
 | `GEMINI_API_KEY` | `...` | Required; server-side only |
 | `GEMINI_MODEL` | `gemini-2.5-flash-lite` | Optional; defaults to Gemini 2.5 Flash-Lite |
 
+### Speech models and speaking voices
+
+Use **Speech recognition** on the upload/chat screen to compare:
+- **Moonshine Tiny (English)** — `onnx-community/moonshine-tiny-ONNX`
+- **Whisper Tiny English** (default) — `onnx-community/whisper-tiny.en`, ONNX conversion of `openai/whisper-tiny.en`
+- **Whisper Tiny (multilingual)** — `onnx-community/whisper-tiny`
+- **Whisper Base (multilingual)** — retained as a comparison baseline
+
+Turn Voice off before switching models, then enable it again. Each model downloads/caches separately; multilingual Whisper offers language selection. Moonshine and Whisper `.en` transcribe English only. No environment variables are needed.
+
+**AI speaking voice** lists voices supplied by the browser/OS, grouped into male/female where familiar voice names allow an inference (the browser API has no gender metadata). Other voices remain unspecified. Selection applies to the next spoken sentence. Voice availability and quality vary by device.
+
 ### Bring your own key (BYOK)
 
 Set **`BYOK_ENABLED=true`** in the deployment environment to require every user to enter their own Gemini API key. Users cannot disable this policy; the API enforces it with no server-key fallback. The key is held in page memory only, sent through `/api/tutor` to Gemini, and cleared on refresh.
