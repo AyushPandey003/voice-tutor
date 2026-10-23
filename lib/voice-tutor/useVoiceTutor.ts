@@ -9,6 +9,8 @@ type Opts = {
   endpoint?: string;     // Next.js route that streams plain text
   systemPrompt?: string; // read fresh on every request
   voice?: string;
+  ttsEngine?: "browser" | "kokoro";
+  kokoroVoice?: string;
   sttModel?: SttModel;
   sttLanguage?: string;
   maxTokens?: number;
@@ -17,7 +19,7 @@ type Opts = {
 };
 
 /** Text chat with hands-free voice and confidence-gated interruption. */
-export function useVoiceTutor({ endpoint = "/api/tutor", systemPrompt, voice, sttModel = "whisper-tiny.en", sttLanguage = "auto", maxTokens, byok = false, apiKey = "" }: Opts = {}) {
+export function useVoiceTutor({ endpoint = "/api/tutor", systemPrompt, voice, ttsEngine = "kokoro", kokoroVoice = "af_heart", sttModel = "whisper-tiny.en", sttLanguage = "auto", maxTokens, byok = false, apiKey = "" }: Opts = {}) {
   const [status, setStatus] = useState<Status>("idle"); // voice state
   const [busy, setBusy] = useState(false);              // LLM reply in flight
   const [messages, setMessages] = useState<Msg[]>([]);
@@ -27,6 +29,7 @@ export function useVoiceTutor({ endpoint = "/api/tutor", systemPrompt, voice, st
   const startup = useRef<AbortController | undefined>(undefined);
 
   const stt = useRef<Worker | undefined>(undefined);
+  const tts = useRef<Worker | undefined>(undefined);
   const utterances = useRef(new Map<SpeechSynthesisUtterance, () => void>());
   const vad = useRef<any>(undefined);
   const userSpeaking = useRef(false);
@@ -46,6 +49,8 @@ export function useVoiceTutor({ endpoint = "/api/tutor", systemPrompt, voice, st
   promptRef.current = systemPrompt;
   const voiceRef = useRef(voice);
   voiceRef.current = voice;
+  const ttsConfig = useRef({ ttsEngine, kokoroVoice });
+  ttsConfig.current = { ttsEngine, kokoroVoice };
   const credentials = useRef({ byok, apiKey });
   credentials.current = { byok, apiKey };
 
@@ -56,7 +61,7 @@ export function useVoiceTutor({ endpoint = "/api/tutor", systemPrompt, voice, st
       const id = ++reqId.current;
       const timer = setTimeout(() => {
         pending.current.delete(id);
-        reject(new Error("Speech recognition timed out. Please try again."));
+        reject(new Error("Speech processing timed out. Try again or select Browser voice on a slower device."));
       }, 90_000);
       pending.current.set(id, (r) => {
         clearTimeout(timer);
@@ -84,6 +89,32 @@ export function useVoiceTutor({ endpoint = "/api/tutor", systemPrompt, voice, st
     speechPending.current++;
     speakQueue.current = speakQueue.current.then(async () => {
       if (myGen !== gen.current || !voiceActive.current || !sentence.trim()) return;
+      if (ttsConfig.current.ttsEngine === "kokoro") {
+        if (!tts.current || !ctx.current) throw new Error("Kokoro is not ready. Turn Voice off and on to retry.");
+        set("speaking");
+        const result = await call(tts.current, {
+          type: "speak", text: sentence.replace(/[*#`]/g, ""), voice: ttsConfig.current.kokoroVoice,
+        });
+        if (myGen !== gen.current || !voiceActive.current || !ctx.current) return;
+        const c = ctx.current;
+        await c.resume();
+        if (myGen !== gen.current || !voiceActive.current) return;
+        const buffer = c.createBuffer(1, result.audio.length, result.sampleRate);
+        buffer.copyToChannel(result.audio, 0);
+        const source = c.createBufferSource();
+        source.buffer = buffer;
+        source.connect(c.destination);
+        const at = Math.max(c.currentTime, nextStart.current);
+        sources.current.push(source);
+        source.onended = () => {
+          source.disconnect();
+          sources.current = sources.current.filter((s) => s !== source);
+          settleVoice(myGen);
+        };
+        source.start(at);
+        nextStart.current = at + buffer.duration;
+        return;
+      }
       await new Promise<void>((resolve) => {
         const utterance = new SpeechSynthesisUtterance(sentence.replace(/[*#`]/g, ""));
         utterance.lang = "en-US";
@@ -160,7 +191,7 @@ export function useVoiceTutor({ endpoint = "/api/tutor", systemPrompt, voice, st
       history.current.push({ role: "assistant", content: full });
       setMessages([...history.current]);
       speakQueue.current.then(() => {
-        if (myGen === gen.current && voiceActive.current && !sources.current.length) set("listening");
+        if (myGen === gen.current && voiceActive.current && !sources.current.length && !speechPending.current) set("listening");
       });
     } catch (e: any) {
       if (myGen !== gen.current) {
@@ -203,7 +234,7 @@ export function useVoiceTutor({ endpoint = "/api/tutor", systemPrompt, voice, st
       };
       return w;
     };
-    const ready = (w: Worker) => new Promise<void>((res, rej) => {
+    const ready = (w: Worker, init: Record<string, unknown>) => new Promise<void>((res, rej) => {
       const cleanup = () => {
         clearTimeout(timer);
         w.removeEventListener("message", h);
@@ -221,15 +252,21 @@ export function useVoiceTutor({ endpoint = "/api/tutor", systemPrompt, voice, st
       w.addEventListener("message", h);
       w.addEventListener("error", failed);
       controller.signal.addEventListener("abort", cancelled, { once: true });
-      w.postMessage({ type: "init", device, model: sttModel, language: sttLanguage });
+      w.postMessage({ type: "init", ...init });
     });
     try {
       ctx.current = new AudioContext();
       await ctx.current.resume();
       // Webpack requires new Worker(new URL(...)) directly to compile worker code.
       stt.current = mk(new Worker(new URL("./stt.worker.ts", import.meta.url), { type: "module" }));
-      if (!window.speechSynthesis) throw new Error("This browser does not support voice playback.");
-      await ready(stt.current);
+      const loading = [ready(stt.current, { device, model: sttModel, language: sttLanguage })];
+      if (ttsEngine === "kokoro") {
+        tts.current = mk(new Worker(new URL("./tts.worker.ts", import.meta.url), { type: "module" }));
+        loading.push(ready(tts.current, { device: "wasm", voice: kokoroVoice }));
+      } else if (!window.speechSynthesis) {
+        throw new Error("This browser does not support browser voice playback. Select Kokoro instead.");
+      }
+      await Promise.all(loading);
       if (controller.signal.aborted) return;
       setLoadingDetail("Starting microphone with echo cancellation�");
       const { MicVAD } = await import("@ricky0123/vad-web");
@@ -292,7 +329,7 @@ export function useVoiceTutor({ endpoint = "/api/tutor", systemPrompt, voice, st
         teardownVoice();
       }
     }
-  }, [send, sttModel, sttLanguage]);
+  }, [send, sttModel, sttLanguage, ttsEngine, kokoroVoice]);
 
   const teardownVoice = () => {
     startup.current?.abort(); startup.current = undefined;
@@ -307,6 +344,8 @@ export function useVoiceTutor({ endpoint = "/api/tutor", systemPrompt, voice, st
     pending.current.clear();
     vad.current?.destroy().catch(() => {}); vad.current = undefined;
     stt.current?.terminate(); stt.current = undefined;
+    tts.current?.terminate(); tts.current = undefined;
+    speakQueue.current = Promise.resolve();
 
     ctx.current?.close().catch(() => {}); ctx.current = undefined;
     setBusy(false);

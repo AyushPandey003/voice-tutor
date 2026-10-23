@@ -26,6 +26,8 @@ export default function TutorPage({ byokRequired }: { byokRequired: boolean }) {
   const [sttModel, setSttModel] = useState<SttModel>("whisper-tiny.en");
   const [sttLanguage, setSttLanguage] = useState("auto");
   const [voice, setVoice] = useState("");
+  const [ttsEngine, setTtsEngine] = useState<"kokoro" | "browser">("kokoro");
+  const [kokoroVoice, setKokoroVoice] = useState("af_heart");
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
 
   useEffect(() => {
@@ -49,6 +51,8 @@ export default function TutorPage({ byokRequired }: { byokRequired: boolean }) {
     sttModel,
     sttLanguage,
     voice,
+    ttsEngine,
+    kokoroVoice,
     maxTokens: 450,
     byok: byokRequired,
     apiKey,
@@ -144,7 +148,26 @@ export default function TutorPage({ byokRequired }: { byokRequired: boolean }) {
             <option value="german">German</option><option value="japanese">Japanese</option>
           </select>
         </label>}
-        <label>AI speaking voice<br />
+        <label>Speech engine<br />
+          <select value={ttsEngine} disabled={voiceOn} onChange={(e) => setTtsEngine(e.target.value as "kokoro" | "browser")}>
+            <option value="kokoro">Kokoro — natural voice (local model)</option>
+            <option value="browser">Browser — lightweight fallback</option>
+          </select>
+        </label>
+        {ttsEngine === "kokoro" ? <label>Kokoro voice<br />
+          <select value={kokoroVoice} disabled={voiceOn} onChange={(e) => setKokoroVoice(e.target.value)}>
+            <optgroup label="Female">
+              <option value="af_heart">Heart — American female</option>
+              <option value="af_bella">Bella — American female</option>
+              <option value="bf_emma">Emma — British female</option>
+            </optgroup>
+            <optgroup label="Male">
+              <option value="am_michael">Michael — American male</option>
+              <option value="am_fenrir">Fenrir — American male</option>
+              <option value="bm_george">George — British male</option>
+            </optgroup>
+          </select>
+        </label> : <label>AI speaking voice<br />
           <select value={voice} onChange={(e) => setVoice(e.target.value)}>
             <option value="">Automatic (English)</option>
             {(["Female", "Male", "Other / unspecified"] as const).map((group) => (
@@ -155,9 +178,10 @@ export default function TutorPage({ byokRequired }: { byokRequired: boolean }) {
               </optgroup>
             ))}
           </select>
-        </label>
+        </label>}
       </div>
-      <p className="sub">{STT_MODELS[sttModel].id}. {voiceOn ? "Turn Voice off to change recognition models." : "Each model downloads once, then is cached by your browser."} Speaking voices depend on your browser/OS; gender groups are inferred from known names. Voice changes apply to the next sentence.</p>
+      {ttsEngine === "kokoro" && <p className="sub">Kokoro downloads a quantized model and voice files on first use, then caches them in your browser. Speech is generated on your device; slower devices may have pauses. Turn Voice off to change engine or Kokoro voice.</p>}
+      <p className="sub">{STT_MODELS[sttModel].id}. {voiceOn ? "Turn Voice off to change recognition models." : "Each model downloads once, then is cached by your browser."} Browser voices depend on your browser/OS; their gender groups are inferred from known names. Browser voice changes apply to the next sentence.</p>
     </section>
   );
 
@@ -235,7 +259,7 @@ export default function TutorPage({ byokRequired }: { byokRequired: boolean }) {
             <button className="ghost" onClick={reset} title="Clear the conversation">↺</button>
           </div>
           <div className="hint">
-            {voiceOn ? <><span className="pill" data-s={status}>{status === "listening" ? "Listening — speak naturally" : status === "recording" ? "Hearing you — pause to send" : status}</span>{loadingDetail && <span role="status"> {loadingDetail}</span>}</> : "Hands-free voice: sustained speech interrupts; a short silence sends your turn. Headphones reduce echo."}
+            {voiceOn ? <><span className="pill" data-s={status}>{status === "listening" ? "Listening — speak naturally" : status === "recording" ? "Hearing you — pause to send" : status}</span>{loadingDetail && <span role="status"> {loadingDetail}</span>}</> : "Hands-free voice: sustained speech interrupts; a short silence sends your turn. Headphones reduce echo. Select Kokoro above for natural local speech."}
           </div>
         </section>
       </div>

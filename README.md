@@ -25,7 +25,7 @@
 | 📄 **Upload** | Drop a `.md` (or `.txt`) lesson; it stays in your browser's localStorage |
 | 🧭 **Outline** | Headings become a sidebar; click one to revise just that section |
 | 🤖 **Coach** | Summary, one-at-a-time quiz with grading, flashcards, simple explanations, weak-spot review |
-| 🎙️ **Optional voice** | On-device Whisper + browser speech playback; confidence-gated hands-free interruption |
+| 🎙️ **Optional voice** | Selectable local STT + Kokoro neural voices or browser playback; confidence-gated hands-free interruption |
 | 💸 **Cheap** | Gemini Flash-Lite; replies capped, history trimmed to 12 messages |
 | 🐳 **Docker** | `docker compose up --build` |
 
@@ -63,7 +63,9 @@ Use **Speech recognition** on the upload/chat screen to compare:
 
 Turn Voice off before switching models, then enable it again. Each model downloads/caches separately; multilingual Whisper offers language selection. Moonshine and Whisper `.en` transcribe English only. No environment variables are needed.
 
-**AI speaking voice** lists voices supplied by the browser/OS, grouped into male/female where familiar voice names allow an inference (the browser API has no gender metadata). Other voices remain unspecified. Selection applies to the next spoken sentence. Voice availability and quality vary by device.
+**Speech engine** defaults to **Kokoro**: select Heart, Bella, Emma, Michael, Fenrir, or George, then enable Voice in the chat. The quantized model and selected voice files download on first use and are cached by the browser. Kokoro runs in a dedicated WASM worker, warms up before microphone startup, and returns sentence-sized audio for queued playback. Generation speed depends on device hardware. Turn Voice off before changing engines or Kokoro voices.
+
+Select **Browser** for a lightweight fallback without a TTS model download. **AI speaking voice** then lists voices supplied by the browser/OS, grouped into male/female where familiar names allow an inference (the browser API has no gender metadata). Other voices remain unspecified. Browser voice changes apply to the next sentence.
 
 ### Bring your own key (BYOK)
 
@@ -88,7 +90,7 @@ The lesson is sent with every request (first 40,000 characters). To cut cost on 
 - 🌐 Voice needs HTTPS or localhost for mic access, and downloads models from Hugging Face on first use.
 - 🎧 Use headphones with voice on to prevent speaker echo from triggering interruption.
 - 🎙️ The mic stays active: speech probability must exceed 0.85 for at least 450 ms before interruption; 650 ms of silence ends your turn. Echo cancellation and noise suppression are requested.
-- 🔊 Browser speech playback replaces local Kokoro inference for lower startup/playback latency; voice quality and online/offline operation depend on your browser.
+- 🔊 Kokoro synthesizes locally without a TTS API key or per-request fee. If local synthesis is slow, switch to Browser; browser voice quality and online/offline operation depend on the device.
 
 ## 📁 Layout
 

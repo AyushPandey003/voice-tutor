@@ -18,6 +18,9 @@ self.onmessage = async (e: MessageEvent) => {
         device,
         progress_callback: (p: any) => self.postMessage({ type: "progress", model: "tts", p }),
       });
+      // Load the chosen voice and initialize inference before enabling the mic.
+      self.postMessage({ type: "progress", model: "tts", p: { status: "progress", file: "Warming up Kokoro voice…", progress: 100 } });
+      await tts.generate("Ready.", { voice: voice ?? "af_heart" });
       self.postMessage({ type: "ready" });
     } else if (type === "speak") {
       const out: any = await tts!.generate(text, { voice: voice ?? "af_heart" });
